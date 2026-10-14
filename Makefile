@@ -154,6 +154,7 @@ UPROGS=\
 	$U/_sync\
 	$U/_sleep\
 	$U/_xargs\
+	$U/_sysinfotest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
