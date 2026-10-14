@@ -1,3 +1,4 @@
+#include "uproc.h"
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -717,6 +718,54 @@ nproc(void)
     if (p->state != UNUSED)
       count++;
     release(&p->lock);
+  }
+
+  return count;
+}
+
+
+uint64
+sys_getprocs(void)
+{
+  uint64 addr;
+  int max;
+  int count = 0;
+  struct proc *p;
+  struct proc *curproc = myproc();
+
+  argaddr(0, &addr);
+  argint(1, &max);
+
+  if (max < 0)
+    return -1;
+
+  for (p = proc; p < &proc[NPROC] && count < max; p++) {
+    struct uproc up;
+
+    acquire(&wait_lock);
+    acquire(&p->lock);
+
+    if (p->state == UNUSED) {
+      release(&p->lock);
+      release(&wait_lock);
+      continue;
+    }
+
+    up.pid = p->pid;
+    up.ppid = p->parent ? p->parent->pid : 0;
+    up.state = p->state;
+    up.sz = p->sz;
+    safestrcpy(up.name, p->name, sizeof(up.name));
+
+    release(&p->lock);
+    release(&wait_lock);
+
+    if (copyout(curproc->pagetable, curproc->sz,
+                addr + count * sizeof(up), (char *)&up,
+                sizeof(up)) < 0)
+      return -1;
+
+    count++;
   }
 
   return count;

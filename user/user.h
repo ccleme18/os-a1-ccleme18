@@ -28,6 +28,8 @@ int sync(void);
 int trace(int mask);
 struct sysinfo;
 int sysinfo(struct sysinfo *);
+struct uproc;
+int getprocs(struct uproc *buf, int max);
 
 // ulib.c
 int stat(const char *, struct stat *);
