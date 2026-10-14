@@ -103,6 +103,7 @@ extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_sync(void);
+extern uint64 sys_trace(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -130,20 +131,99 @@ static uint64 (*syscalls[])(void) = {
   [SYS_mkdir]   = sys_mkdir,
   [SYS_close]   = sys_close,
   [SYS_sync]    = sys_sync,
+  [SYS_trace]   = sys_trace,
   // clang-format on
+};
+
+static char *syscall_names[] = {
+  [SYS_fork]    = "fork",
+  [SYS_exit]    = "exit",
+  [SYS_wait]    = "wait",
+  [SYS_pipe]    = "pipe",
+  [SYS_read]    = "read",
+  [SYS_kill]    = "kill",
+  [SYS_exec]    = "exec",
+  [SYS_fstat]   = "fstat",
+  [SYS_chdir]   = "chdir",
+  [SYS_dup]     = "dup",
+  [SYS_getpid]  = "getpid",
+  [SYS_sbrk]    = "sbrk",
+  [SYS_pause]   = "pause",
+  [SYS_uptime]  = "uptime",
+  [SYS_open]    = "open",
+  [SYS_write]   = "write",
+  [SYS_mknod]   = "mknod",
+  [SYS_unlink]  = "unlink",
+  [SYS_link]    = "link",
+  [SYS_mkdir]   = "mkdir",
+  [SYS_close]   = "close",
+  [SYS_sync]    = "sync",
+  [SYS_trace]   = "trace",
 };
 
 void
 syscall(void)
 {
   int num;
+  uint64 args[6];
+  uint64 ret;
   struct proc *p = myproc();
+  char strarg[128];
+  int is_string = 0;
+  int no_arg = 0;
+  int have_string = 0;
 
   num = p->trapframe->a7;
+
   if (num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    // Use num to lookup the system call function for num, call it,
-    // and store its return value in p->trapframe->a0
-    p->trapframe->a0 = syscalls[num]();
+    // Save argument registers before calling the handler.
+    args[0] = p->trapframe->a0;
+    args[1] = p->trapframe->a1;
+    args[2] = p->trapframe->a2;
+    args[3] = p->trapframe->a3;
+    args[4] = p->trapframe->a4;
+    args[5] = p->trapframe->a5;
+
+    // These system calls take no argument that we print.
+    if (num == SYS_fork || num == SYS_getpid ||
+        num == SYS_uptime || num == SYS_sync) {
+      no_arg = 1;
+    }
+
+    // These system calls take a string as their first argument.
+    if (num == SYS_open || num == SYS_exec ||
+        num == SYS_chdir || num == SYS_mkdir ||
+        num == SYS_unlink || num == SYS_link ||
+        num == SYS_mknod) {
+      uint64 addr = args[0];
+
+      is_string = 1;
+      if (fetchstr(addr, strarg, sizeof(strarg)) >= 0)
+        have_string = 1;
+    }
+
+    // Call the handler and save its return value.
+    ret = syscalls[num]();
+    p->trapframe->a0 = ret;
+
+    // Check the mask after the handler so trace(mask) can trace itself.
+    if ((p->tracemask & (1 << num)) && num != SYS_exit) {
+      if (no_arg) {
+        printk("[%d] %s() -> %d\n",
+               p->pid, syscall_names[num], (int)ret);
+      } else if (is_string) {
+        if (have_string) {
+          printk("[%d] %s(\"%s\") -> %d\n",
+                 p->pid, syscall_names[num], strarg, (int)ret);
+        } else {
+          printk("[%d] %s(?) -> %d\n",
+                 p->pid, syscall_names[num], (int)ret);
+        }
+      } else {
+        printk("[%d] %s(%d) -> %d\n",
+               p->pid, syscall_names[num], (int)args[0], (int)ret);
+      }
+    }
   } else {
     printk("%d %s: unknown sys call %d\n", p->pid, p->name, num);
     p->trapframe->a0 = -1;
